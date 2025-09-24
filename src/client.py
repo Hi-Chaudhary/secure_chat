@@ -71,6 +71,11 @@ async def interactive_send(ws, username: str, aes_key: bytes):
         payload = {"nonce": b64enc(nonce), "ciphertext": b64enc(ct)}
         envelope = make_envelope(inner["type"], username, inner.get("to", "*"), payload)
         await ws.send(envelope)
+        # NEW: local echo so you know the send happened
+        if inner["type"] == "PUBLIC_MSG":
+            print(f">> sent PUBLIC: {inner.get('text','')}")
+        else:
+            print(f">> sent PRIVATE to {inner.get('to')}: {inner.get('text','')}")
 
 
 async def run(uri: str, username: str):

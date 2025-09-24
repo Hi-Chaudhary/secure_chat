@@ -16,16 +16,16 @@ Requirements:
 
 Quick start:
 1) Generate demo keys:
-   python3 examples/generate_demo_keys.py
+   python -m examples/generate_demo_keys
 
 2) Start server:
-   python3 src/server.py --port 9000
+   python -m src.server --port 9000
 
 3) Start client (in a separate terminal):
-   python3 src/client.py --connect ws://localhost:9000 --username alice
+   python -m src.client --connect ws://127.0.0.1:9000 --username alice
 
 4) Start another client:
-   python3 src/client.py --connect ws://localhost:9000 --username bob
+   python -m src.client --connect ws://127.0.0.1:9000 --username bob
 
 Examples:
 - To send public message: just type text and press Enter.

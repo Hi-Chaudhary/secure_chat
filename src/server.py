@@ -54,13 +54,14 @@ class ChatServer:
         self.priv_key = load_rsa_private_key(priv_pem)
         self.pub_pem = pub_pem  # bytes
 
-    async def handler(self, ws: WebSocketServerProtocol, path: str):
+    async def handler(self, ws):
         # 1) send HANDSHAKE info (server pubkey)
         await ws.send(json.dumps({"type": "HANDSHAKE_INIT", "server_pub": self.pub_pem.decode("utf-8")}))
 
         # wait for client to send encrypted aes key inside a HANDSHAKE envelope
         try:
             raw = await asyncio.wait_for(ws.recv(), timeout=10.0)
+            LOG.info("RAW HANDSHAKE MSG: %s", raw)
         except Exception:
             LOG.warning("Handshake timeout or error")
             await ws.close()
@@ -71,43 +72,77 @@ class ChatServer:
             if env["type"] != "HANDSHAKE":
                 raise ValueError("Expected HANDSHAKE")
             payload = env["payload"]
-            enc_key_b64 = payload.get("enc_key")
             username = env.get("from", "")
             if not username:
                 raise ValueError("Missing username in handshake")
+
+            enc_key_b64 = payload.get("enc_key")
+            if not enc_key_b64:
+                raise ValueError("Missing enc_key in handshake payload")
+
             enc_key = b64dec(enc_key_b64)
+
+            # Decrypt AES session key with server RSA private key
             aes_key = rsa_decrypt_with_private(self.priv_key, enc_key)
+            LOG.debug("Handshake decrypt OK for user=%s", username)
+
         except Exception as e:
-            LOG.exception("Handshake failed: %s", e)
+            LOG.exception("Handshake failed for incoming client: %s", e)
             await ws.close()
             return
 
         # register client
-        state = ClientState(username=username, ws=ws)
-        state.aes_key = aes_key
-        async with self.lock:
-            if username in self.clients:
-                # username collision: reject
-                await ws.send(json.dumps({"type": "ACK", "meta": {"status": "ERROR", "reason": "username taken"}}))
-                await ws.close()
-                return
-            self.clients[username] = state
-            LOG.info("Client joined: %s", username)
-            # announce to others
-            await self.broadcast_system(f"{username} has joined the public channel", exclude=username)
-
         try:
-            await self.client_loop(state)
-        finally:
+            # register client
+            state = ClientState(username=username, ws=ws)
+            state.aes_key = aes_key
+
             async with self.lock:
-                self.clients.pop(username, None)
-                LOG.info("Client left: %s", username)
-                await self.broadcast_system(f"{username} has left the public channel", exclude=None)
+                if username in self.clients:
+                    LOG.error("Username collision for %s", username)
+                    await ws.send(json.dumps({"type": "ACK", "meta": {"status": "ERROR", "reason": "username taken"}}))
+                    await ws.close()
+                    return
+
+                self.clients[username] = state
+                LOG.info("Client joined: %s", username)
+
+                # try announcing join (but don't die if broadcast fails)
+                try:
+                    await self.broadcast_system(f"{username} has joined the public channel", exclude=username)
+                except Exception:
+                    LOG.exception("broadcast_system(join) failed for %s (continuing)", username)
+
+            # main per-client loop
+            try:
+                await self.client_loop(state)
+            except websockets.ConnectionClosed as e:
+                LOG.info("Connection closed for %s: %s", username, e)
+            except Exception:
+                LOG.exception("client_loop crashed for %s", username)
+            finally:
+                async with self.lock:
+                    if self.clients.pop(username, None) is not None:
+                        LOG.info("Client left: %s", username)
+                        try:
+                            await self.broadcast_system(f"{username} has left the public channel")
+                        except Exception:
+                            LOG.exception("broadcast_system(leave) failed for %s", username)
+
+        except Exception:
+            LOG.exception("Registration failed after handshake for user=%s", username)
+            try:
+                await ws.close()
+            finally:
+                return
 
     async def client_loop(self, state: ClientState):
         ws = state.ws
+        LOG.debug("ENTER client_loop for %s", state.username)  # <— add this
         while True:
             raw = await ws.recv()
+            LOG.debug("RAW FROM %s: %s", state.username, raw)
+
             try:
                 env = parse_envelope(raw)
             except Exception:

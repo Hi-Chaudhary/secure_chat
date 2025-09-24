@@ -7,11 +7,12 @@ import os
 LOG = logging.getLogger("chat")
 LOG.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 ch.setFormatter(formatter)
 LOG.addHandler(ch)
 
+LOG.setLevel(logging.DEBUG)
+ch.setLevel(logging.DEBUG)
 
 def ensure_dir(path: str):
     pathlib.Path(path).mkdir(parents=True, exist_ok=True)
