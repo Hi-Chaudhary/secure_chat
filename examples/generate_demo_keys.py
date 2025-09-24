@@ -1,5 +1,5 @@
 # examples/generate_demo_keys.py
-from crypto import generate_rsa_keypair, b64enc
+from src.crypto import generate_rsa_keypair, b64enc
 from pathlib import Path
 import os
 

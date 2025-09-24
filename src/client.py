@@ -10,12 +10,12 @@ import argparse
 import logging
 import websockets
 from typing import Any, Dict
-from crypto import (
+from src.crypto import (
     load_rsa_public_key, rsa_encrypt_with_public, generate_aes_key,
     aesgcm_encrypt, aesgcm_decrypt, b64enc, b64dec
 )
-from protocol import make_envelope, parse_envelope
-from utils import LOG
+from src.protocol import make_envelope, parse_envelope
+from src.utils import LOG
 import sys
 
 async def listen_loop(ws, aes_key: bytes):

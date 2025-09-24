@@ -13,12 +13,12 @@ import logging
 import websockets
 from websockets.server import WebSocketServerProtocol
 from typing import Dict, Any
-from crypto import (
+from src.crypto import (
     load_rsa_private_key, load_rsa_public_key, rsa_decrypt_with_private,
     b64dec, b64enc, aesgcm_decrypt, aesgcm_encrypt, generate_rsa_keypair
 )
-from protocol import make_envelope, parse_envelope
-from utils import LOG, read_file_bytes, write_file_bytes, ensure_dir, safe_filename
+from src.protocol import make_envelope, parse_envelope
+from src.utils import LOG, read_file_bytes, write_file_bytes, ensure_dir, safe_filename
 import os
 
 KEY_DIR = "examples/demo_keys"
