@@ -7,7 +7,8 @@ class PeerInfo:
     peer_id: str
     pubkey_pem_b64: str
     fingerprint: str
-
+    uuid: Optional[str] = None     
+    label: Optional[str] = None 
 @dataclass
 class Session:
     aes_key: bytes
@@ -17,6 +18,8 @@ class State:
     self_id: str
     peers: Dict[str, PeerInfo] = field(default_factory=dict)
     sessions: Dict[str, Session] = field(default_factory=dict)
+    self_uuid: Optional[str] = None   
+    self_label: Optional[str] = None    
 
     def add_peer(self, info: PeerInfo):
         self.peers[info.peer_id] = info

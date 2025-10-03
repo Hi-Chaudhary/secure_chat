@@ -63,7 +63,14 @@ class Handlers:
     # -------------------------
     async def on_open_connection(self, remote_label: str):
         """Send HELLO (declared identity + pubkey) on new connection."""
-        msg = {"type": "HELLO", "from": self.state.self_id, "pubkey_pem": self.self_pub_b64, "ts": now_ts()}
+        msg = {
+            "type": "HELLO",
+            "from": self.state.self_id,
+            "uuid": getattr(self.state, "self_uuid", None),                          # <<< ADD
+            "label": (getattr(self.state, "self_label", None) or self.state.self_id),# <<< ADD
+            "pubkey_pem": self.self_pub_b64,
+            "ts": now_ts(),
+        }
         await self.send_json(remote_label, msg)
 
     async def on_message(self, raw: str, remote_label: str):
@@ -102,6 +109,9 @@ class Handlers:
             return
         peer_name = obj["from"]
         pub_b64 = obj["pubkey_pem"]
+        remote_uuid = obj.get("uuid")                     
+        remote_label_field = obj.get("label") or peer_name 
+
         try:
             pub = RSA.import_key(b64d(pub_b64))
         except Exception:
@@ -125,7 +135,13 @@ class Handlers:
             pass
 
         # Save/update peer entry
-        info = PeerInfo(peer_id=peer_name, pubkey_pem_b64=pub_b64, fingerprint=fp)
+        info = PeerInfo(
+            peer_id=peer_name,
+            pubkey_pem_b64=pub_b64,
+            fingerprint=fp,
+            uuid=remote_uuid,                
+            label=remote_label_field,       
+        )
         self.state.add_peer(info)
 
         # Move any temp session under the real name
@@ -253,8 +269,13 @@ class Handlers:
             print(f"[LIST_RESPONSE from {remote_name}] {len(peers)} peers:")
             for p in peers:
                 pid = p.get("id")
+                uid = p.get("uuid")                     
+                label = p.get("label") or pid           
                 fp = p.get("fp")
-                print(f"  - {pid} (fp: {fp})")
+                if uid:
+                    print(f"  - {label}  [id:{pid}]  [uuid:{uid}]  (fp:{fp})")
+                else:
+                    print(f"  - {pid} (fp:{fp})")
         elif ptype == "MSG_PRIVATE":
             to_id = payload.get("to")
             text = payload.get("text", "")
@@ -345,7 +366,12 @@ class Handlers:
         await self.encrypt_and_send(to_id, payload)
 
     async def _send_list_response(self, to_id: str):
-        peers = [{"id": p.peer_id, "fp": p.fingerprint} for p in self.state.list_peers()]
+        peers = [{
+            "id": p.peer_id,
+            "uuid": getattr(p, "uuid", None),                      
+            "label": (getattr(p, "label", None) or p.peer_id),     
+            "fp": p.fingerprint,
+        } for p in self.state.list_peers()]
         payload = {"type": "LIST_RESPONSE", "peers": peers, "ts": now_ts()}
         await self.send_application(to_id, payload)
 

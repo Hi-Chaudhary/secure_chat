@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import uuid 
 from pathlib import Path
 from Crypto.PublicKey import RSA
 from .utils import b64e
@@ -72,3 +73,23 @@ def pin_peer(peer_name: str, fp: str, path: str = TRUSTMAP_PATH):
 def get_pinned(peer_name: str, path: str = TRUSTMAP_PATH):
     tm = load_trustmap(path)
     return tm.get(peer_name)
+
+def load_or_create_uuid(keys_dir: str) -> str:
+    """
+    Persist a UUIDv4 under <keys_dir>/uuid.txt and return it (idempotent).
+    """
+    path = os.path.join(keys_dir, "uuid.txt")
+    # Try existing
+    try:
+        with open(path, "r") as f:
+            u = f.read().strip()
+            if u:
+                return u
+    except Exception:
+        pass
+    # Create new
+    os.makedirs(keys_dir, exist_ok=True)
+    u = str(uuid.uuid4())
+    with open(path, "w") as f:
+        f.write(u)
+    return u

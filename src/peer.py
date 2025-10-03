@@ -2,7 +2,7 @@
 import asyncio, json, websockets
 from typing import List, Dict, Any, Optional
 from .utils import to_json
-from .keymgr import load_priv, load_pub, pub_pem_b64
+from .keymgr import load_priv, load_pub, pub_pem_b64, load_or_create_uuid
 from .storage import State
 from .handlers import Handlers
 from .protocol import MAX_WS_FRAME
@@ -19,12 +19,15 @@ class Peer:
         self.port = port
         self.keys_dir = keys_dir
         self.peers_urls = peers
+        self.node_uuid = load_or_create_uuid(self.keys_dir)
 
         self.priv = load_priv(keys_dir)
         self.pub  = load_pub(keys_dir)
         self.pub_b64 = pub_pem_b64(self.pub)
 
         self.state = State(self_id=name)
+        self.state.self_uuid = self.node_uuid               
+        self.state.self_label = self.name  
 
         # connection maps
         self.out_conns: Dict[str, websockets.WebSocketClientProtocol] = {}
