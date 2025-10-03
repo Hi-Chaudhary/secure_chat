@@ -7,6 +7,7 @@ import pathlib
 from typing import Dict, Any, Optional
 
 from Crypto.PublicKey import RSA
+import uuid as _uuid
 from .utils import b64e, b64d, now_ts
 from .crypto import (
     rsa_wrap_key,
@@ -281,7 +282,7 @@ class Handlers:
             text = payload.get("text", "")
             # if to_id == self.state.self_id:
             #     print(f"[PM from {remote_name}] {text}")
-            if to_id == self.state.self_id:
+            if to_id == self.state.self_id or to_id == getattr(self.state, "self_uuid", None):
                 author = payload.get("from", remote_name)
                 print(f"[PM from {author}] {text}")
             else:
@@ -331,7 +332,30 @@ class Handlers:
         elif ptype == "FILE_END":
             await self._handle_file_end(payload, remote_name)
 
+    def _resolve_to_id(self, to_id: Optional[str]) -> Optional[str]:
+        """
+        Accept display name (default) or UUIDv4.
+        If UUID matches a known peer's uuid, return that peer's display name.
+        Otherwise, return the original value.
+        """
+        if not to_id:
+            return to_id
+        if to_id == BROADCAST:
+            return to_id
+        # Try parse UUID
+        try:
+            norm = str(_uuid.UUID(str(to_id)))
+        except Exception:
+            return to_id
+        # Map uuid -> display name via state.peers
+        for name, pinfo in self.state.peers.items():
+            if getattr(pinfo, "uuid", None) == norm:
+                return name
+        return to_id
+
     async def encrypt_and_send(self, to_id: str, payload: Dict[str, Any]):
+        # Resolve again defensively (if called directly)
+        to_id = self._resolve_to_id(to_id)
         # broadcast or direct
         if to_id == BROADCAST:
             for peer_name, sess in list(self.state.sessions.items()):
@@ -357,13 +381,24 @@ class Handlers:
         await self.send_json(to_id, env)
 
     async def send_application(self, to_id: Optional[str], payload: Dict[str, Any]):
+        # Default broadcast if not provided
         to_id = to_id or BROADCAST
+        
+        # Resolve UUID → display name for routing
+        resolved = self._resolve_to_id(to_id)
+        
+        # For app payloads that carry a 'to' field, rewrite it as well so receiver matches self_id
+        if isinstance(payload, dict) and "to" in payload and payload["to"] not in (None, BROADCAST):
+            payload = dict(payload)  # avoid mutating caller's dict
+            payload["to"] = self._resolve_to_id(payload["to"])
+            
         # Preserve original author for display on the final hop
         if isinstance(payload, dict) and payload.get("type") in ("MSG_PRIVATE", "MSG_GROUP"):
             if "from" not in payload:
-                payload = dict(payload)  # avoid mutating caller's dict
+                payload = dict(payload)
                 payload["from"] = self.state.self_id
-        await self.encrypt_and_send(to_id, payload)
+                
+        await self.encrypt_and_send(resolved, payload)
 
     async def _send_list_response(self, to_id: str):
         peers = [{

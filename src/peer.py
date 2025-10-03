@@ -1,5 +1,6 @@
 # src/peer.py
 import asyncio, json, websockets
+import uuid as _uuid
 from typing import List, Dict, Any, Optional
 from .utils import to_json
 from .keymgr import load_priv, load_pub, pub_pem_b64, load_or_create_uuid
@@ -97,24 +98,52 @@ class Peer:
         if temp_label in self.out_conns or temp_label in self.in_conns:
             self.reverse_alias[real_name] = temp_label
 
-    async def _send_json(self, to_id: Optional[str], obj: Dict[str, Any]):
-        data = to_json(obj)
+    def _resolve_recipient_id(self, to_id: Optional[str]) -> Optional[str]:
+        """
+        Accept either a display name (current behavior) or a UUIDv4.
+        If a UUID matches a known peer's UUID, return that peer's display id (name).
+        Otherwise, return the original value unchanged.
+        """
+        if not to_id:
+            return to_id
+        # Try to parse as UUID; if it fails, it's just a normal name
+        try:
+            norm = str(_uuid.UUID(str(to_id)))
+        except Exception:
+            return to_id
+        # Map uuid -> existing display name from the state.peers table
+        for name, p in self.state.peers.items():
+            if getattr(p, "uuid", None) == norm:
+                return name
+        return to_id
 
-        if to_id is None or to_id == "*":
+    async def _send_json(self, to_id: Optional[str], obj: Dict[str, Any]):
+        # 1) Resolve UUIDs to display names for routing
+        resolved_to = self._resolve_recipient_id(to_id)
+
+        # 2) ALSO fix the envelope so receivers see their expected name (not UUID)
+        if isinstance(obj, dict) and "to" in obj and obj["to"] not in (None, "*"):
+            # shallow copy to avoid mutating caller’s dict unexpectedly
+            obj = dict(obj)
+            obj["to"] = self._resolve_recipient_id(obj["to"])
+
+        data = to_json(obj)
+        # ... then continue your existing logic, but use `resolved_to` everywhere
+        if resolved_to is None or resolved_to == "*":
             for ws in list(self.out_conns.values()):
                 await _safe_send(ws, data)
             for ws in list(self.in_conns.values()):
                 await _safe_send(ws, data)
             return
 
-        label = self.reverse_alias.get(to_id)
+        label = self.reverse_alias.get(resolved_to)
         if label:
             ws = self.out_conns.get(label) or self.in_conns.get(label)
             if ws:
                 await _safe_send(ws, data)
                 return
 
-        # fallback broadcast (only intended peer will accept/decrypt)
+        # fallback broadcast; only intended peer will accept/decrypt
         for ws in list(self.out_conns.values()):
             await _safe_send(ws, data)
         for ws in list(self.in_conns.values()):
