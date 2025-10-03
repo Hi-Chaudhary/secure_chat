@@ -1,33 +1,19 @@
-# src/utils.py
-from __future__ import annotations
-import logging
-import pathlib
-import os
+import base64, json, time, os, hmac
 
-LOG = logging.getLogger("chat")
-LOG.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-ch.setFormatter(formatter)
-LOG.addHandler(ch)
+def b64e(b: bytes) -> str:
+    return base64.b64encode(b).decode('ascii')
 
-LOG.setLevel(logging.DEBUG)
-ch.setLevel(logging.DEBUG)
+def b64d(s: str) -> bytes:
+    return base64.b64decode(s.encode('ascii'))
 
-def ensure_dir(path: str):
-    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+def now_ts() -> int:
+    return int(time.time())
 
+def consteq(a: bytes, b: bytes) -> bool:
+    return hmac.compare_digest(a, b)
 
-def read_file_bytes(path: str) -> bytes:
-    with open(path, "rb") as f:
-        return f.read()
+def load_json_line(line: str):
+    return json.loads(line)
 
-
-def write_file_bytes(path: str, data: bytes):
-    with open(path, "wb") as f:
-        f.write(data)
-
-
-def safe_filename(s: str) -> str:
-    # very conservative sanitization for secure baseline
-    return "".join(c for c in s if c.isalnum() or c in ("-", "_", "."))
+def to_json(obj) -> str:
+    return json.dumps(obj, separators=(',',':'))
