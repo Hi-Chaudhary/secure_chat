@@ -170,6 +170,11 @@ def validate_payload(payload: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         return _validate_file_end(payload)
     if ptype == "ADMIN_CMD":  # only for vulnerable build; shape check here
         return _validate_admin_cmd(payload)
+    # NEW: acknowledgements and errors
+    if ptype == "ACK":
+        return _validate_ack(payload)
+    if ptype == "ERROR":
+        return _validate_error(payload)
 
     return False, f"unknown payload type {ptype}"
 
@@ -279,6 +284,25 @@ def _validate_admin_cmd(payload: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
     if not isinstance(action, str) or len(action) == 0:
         return False, "admin action invalid"
     return True, None
+
+# -----------------------
+# NEW: payload validators
+# -----------------------
+def _validate_ack(payload: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    of = payload.get("of")
+    if not isinstance(of, str) or len(of) == 0:
+        return False, "ack 'of' invalid"
+    return True, None
+
+def _validate_error(payload: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    code = payload.get("code")
+    detail = payload.get("detail")
+    if not isinstance(code, str) or len(code) == 0:
+        return False, "error code invalid"
+    if detail is not None and not isinstance(detail, str):
+        return False, "error detail must be string"
+    return True, None
+
 
 
 # -----------------------

@@ -280,11 +280,19 @@ class Handlers:
         elif ptype == "MSG_PRIVATE":
             to_id = payload.get("to")
             text = payload.get("text", "")
-            # if to_id == self.state.self_id:
-            #     print(f"[PM from {remote_name}] {text}")
-            if to_id == self.state.self_id or to_id == getattr(self.state, "self_uuid", None):
+            if to_id == self.state.self_id:
+                # Final recipient: show and ACK
                 author = payload.get("from", remote_name)
                 print(f"[PM from {author}] {text}")
+                try:
+                    await self.send_application(author, {
+                        "type": "ACK",
+                        "of": "MSG_PRIVATE",
+                        "from": self.state.self_id,
+                        "ts": now_ts()
+                    })
+                except Exception:
+                    pass
             else:
                 # Forward toward the target. If we already have a direct session, use it.
                 sess = self.state.get_session(to_id)
@@ -292,9 +300,23 @@ class Handlers:
                     await self._encrypt_send_one(to_id, payload, sess)
                 else:
                     # No direct path: relay to all neighbors EXCEPT where it came from.
+                    forwarded = 0
                     for peer_name, sess2 in list(self.state.sessions.items()):
                         if peer_name != remote_name:
                             await self._encrypt_send_one(peer_name, payload, sess2)
+                            forwarded += 1
+                    if forwarded == 0:
+                        # Bounce an error back to the previous hop
+                        try:
+                            await self.send_application(remote_name, {
+                                "type": "ERROR",
+                                "code": "USER_NOT_FOUND",
+                                "detail": f"Unknown user {to_id}",
+                                "from": self.state.self_id,
+                                "ts": now_ts()
+                            })
+                        except Exception:
+                            pass
         elif ptype == "MSG_GROUP":
             text = payload.get("text", "")
             author = payload.get("from", remote_name)
@@ -330,7 +352,58 @@ class Handlers:
         elif ptype == "FILE_CHUNK":
             await self._handle_file_chunk(payload, remote_name)
         elif ptype == "FILE_END":
+            # Finish local file receive (or relay inside _handle_file_end if that's your logic)
             await self._handle_file_end(payload, remote_name)
+
+            # If WE are the final recipient, send an ACK back to the sender
+            # (We detect this by conventional shape: payload['to'] equals our ID)
+            to_id = payload.get("to")
+            if to_id == self.state.self_id:
+                author = payload.get("from", remote_name)
+                try:
+                    await self.send_application(author, {
+                        "type": "ACK",
+                        "of": "FILE",
+                        # Include optional context if your FILE_* payload carries these:
+                        "file": payload.get("name") or payload.get("filename"),
+                        "sha256": payload.get("sha256"),
+                        "from": self.state.self_id,
+                        "ts": now_ts()
+                    })
+                except Exception:
+                    # ACK is best-effort; ignore failures
+                    pass
+            # NEW: console handlers for acknowledgements and errors
+        elif ptype == "ACK":
+            of = payload.get("of", "?")
+            author = payload.get("from", remote_name)
+            # For FILE we might show extra context if present
+            file_name = payload.get("file")
+            if file_name and of.upper() == "FILE":
+                print(f"[ACK from {author}] {of} ({file_name})")
+            else:
+                print(f"[ACK from {author}] {of}")
+
+        elif ptype == "ERROR":
+            code = payload.get("code", "?")
+            detail = payload.get("detail", "")
+            author = payload.get("from", remote_name)
+            if detail:
+                print(f"[ERROR from {author}] {code}: {detail}")
+            else:
+                print(f"[ERROR from {author}] {code}")
+        else:
+            # Unrecognised type: send a standard error back to the previous hop.
+            try:
+                await self.send_application(remote_name, {
+                    "type": "ERROR",
+                    "code": "UNKNOWN_TYPE",
+                    "detail": f"Unsupported payload type '{ptype}'",
+                    "from": self.state.self_id,
+                    "ts": now_ts()
+                })
+            except Exception:
+                pass
 
     def _resolve_to_id(self, to_id: Optional[str]) -> Optional[str]:
         """
@@ -393,7 +466,7 @@ class Handlers:
             payload["to"] = self._resolve_to_id(payload["to"])
             
         # Preserve original author for display on the final hop
-        if isinstance(payload, dict) and payload.get("type") in ("MSG_PRIVATE", "MSG_GROUP"):
+        if isinstance(payload, dict) and payload.get("type") in ("MSG_PRIVATE", "MSG_GROUP", "ACK", "ERROR"):
             if "from" not in payload:
                 payload = dict(payload)
                 payload["from"] = self.state.self_id
