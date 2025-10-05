@@ -145,6 +145,24 @@ class Handlers:
             label=remote_label_field,       
         )
         self.state.add_peer(info)
+        # Best-effort: persist peer entry to optional JSON user DB (non-invasive)
+        try:
+            # tolerant import: works when running as package or as script
+            from src.user_db import add_or_update as _db_add
+        except Exception:
+            try:
+                from user_db import add_or_update as _db_add
+            except Exception:
+                _db_add = None
+
+        if _db_add:
+            try:
+                # store peer_name and the base64 PEM we already have (pub_b64)
+                _db_add(peer_name, pub_b64, version=1)
+            except Exception:
+                # swallow errors — persistence is best-effort
+                pass
+
 
         # Move any temp session under the real name
         temp_sess = self.state.get_session(remote_label)
@@ -224,7 +242,42 @@ class Handlers:
         # Retrieve pubkey and verify signature
         pinfo = self.state.get_peer(lookup_key)
         if not pinfo:
-            return
+            # Best-effort disk fallback: try reading pubkey from optional user_db
+            try:
+                from src.user_db import get_pubkey as _db_get
+            except Exception:
+                try:
+                    from user_db import get_pubkey as _db_get
+                except Exception:
+                    _db_get = None
+
+            if _db_get:
+                try:
+                    disk_pub = _db_get(lookup_key)
+                    if disk_pub:
+                        # compute fingerprint and register the peer into runtime state
+                        try:
+                            disk_pub_rsa = RSA.import_key(b64d(disk_pub))
+                            fp = fingerprint(disk_pub_rsa)
+                        except Exception:
+                            fp = None
+                        info = PeerInfo(
+                            peer_id=lookup_key,
+                            pubkey_pem_b64=disk_pub,
+                            fingerprint=fp,
+                            uuid=None,
+                            label=lookup_key,
+                        )
+                        try:
+                            self.state.add_peer(info)
+                            pinfo = info
+                        except Exception:
+                            pinfo = None
+                except Exception:
+                    pinfo = None
+
+            if not pinfo:
+                return
         try:
             pub = RSA.import_key(b64d(pinfo.pubkey_pem_b64))
         except Exception:
