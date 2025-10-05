@@ -353,11 +353,12 @@ class Handlers:
                 print(f"[PM from {author}] {text}")
                 try:
                     await self.send_application(author, {
-                        "type": "ACK",
-                        "of": "MSG_PRIVATE",
-                        "from": self.state.self_id,
-                        "ts": now_ts()
-                    })
+                    "type": "ACK",
+                    "of": "MSG_PRIVATE",
+                    "to": author,                 # <— add this line
+                    "from": self.state.self_id,
+                    "ts": now_ts()
+                })
                 except Exception:
                     pass
             else:
@@ -405,6 +406,18 @@ class Handlers:
             author = payload.get("from", remote_name)
             print(f"[GROUP from {author}] {text}")
 
+            try:
+                await self.send_application(author, {
+                    "type": "ACK",
+                    "of": "MSG_GROUP",
+                    "mid": mid,                 # so sender can correlate which group msg was ACKed
+                    "from": self.state.self_id, # who is acknowledging
+                    "ts": now_ts()
+                })
+            except Exception:
+                # Best-effort; swallow
+                pass
+
             # Fan out
             ttl = int(payload.get("ttl", 0))
             if ttl > 0:
@@ -440,11 +453,21 @@ class Handlers:
                 except Exception:
                     # ACK is best-effort; ignore failures
                     pass
-            # NEW: console handlers for acknowledgements and errors
+        # NEW: console handlers for acknowledgements and errors
         elif ptype == "ACK":
             of = payload.get("of", "?")
             author = payload.get("from", remote_name)
-            # For FILE we might show extra context if present
+            to_id = payload.get("to")
+
+            # If ACK is addressed to someone else, forward it silently
+            if to_id and to_id != self.state.self_id:
+                try:
+                    await self.send_application(to_id, payload)
+                except Exception:
+                    pass
+                return  # don't print at relay
+
+            # Final recipient (or broadcast): print locally
             file_name = payload.get("file")
             if file_name and of.upper() == "FILE":
                 print(f"[ACK from {author}] {of} ({file_name})")

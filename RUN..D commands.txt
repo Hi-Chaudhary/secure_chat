@@ -19,7 +19,7 @@ python -m src.main --name alpha-hub --port 9001 --keys keys/alpha-hub
 python -m src.main --name alice --port 9101 --keys keys/alice --peers ws://localhost:9001
 
 # Ben
-python -m src.main --name ben   --port 9102 --keys keys/ben   --peers ws://localhost:9001
+python -m src.main --name ben   --port 9102 --keys keys/ben   --peers ws://10.13.96.60:9001
 
 # Cara
 python -m src.main --name cara  --port 9103 --keys keys/cara  --peers ws://localhost:9001
