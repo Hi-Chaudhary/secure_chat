@@ -12,9 +12,9 @@ class PeerInfo:
     fingerprint: str
     uuid: Optional[str] = None     
     label: Optional[str] = None 
-@dataclass
-class Session:
-    aes_key: bytes
+# @dataclass
+# class Session:
+#     aes_key: bytes
 
 @dataclass
 class Session:
