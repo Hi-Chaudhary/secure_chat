@@ -5,7 +5,7 @@ from Crypto.PublicKey import RSA
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--peer-id', required=True, help='peer id (directory name)')
-    ap.add_argument('--bits', type=int, default=3072)
+    ap.add_argument('--bits', type=int, default=4096)
     ap.add_argument('--out', default='keys')
     args = ap.parse_args()
     peer_dir = Path(args.out) / args.peer_id
