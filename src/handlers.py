@@ -230,6 +230,17 @@ class Handlers:
             peer_name = None
         lookup_key = peer_name or remote_label
 
+        # Decrypt with session key
+        sess = self.state.get_session(lookup_key) or self.state.get_session(remote_label)
+        if not sess:
+            print("[!] No session for", lookup_key)
+            return
+        # mark alive
+        try:
+            sess.last_seen = now_ts()
+        except Exception:
+            pass
+
         # Replay protection using ts + (iv|nonce)
         ts = obj.get("ts")
         iv_field = obj.get("iv", "")
@@ -323,14 +334,16 @@ class Handlers:
             peers = payload.get("peers", [])
             print(f"[LIST_RESPONSE from {remote_name}] {len(peers)} peers:")
             for p in peers:
-                pid = p.get("id")
-                uid = p.get("uuid")                     
-                label = p.get("label") or pid           
-                fp = p.get("fp")
+                pid   = p.get("id")
+                uid   = p.get("uuid")
+                label = p.get("label") or pid
+                fp    = p.get("fp")
+                on    = p.get("online") is True  # may be absent in older nodes
+                badge = "[online]" if on else "[offline]"
                 if uid:
-                    print(f"  - {label}  [id:{pid}]  [uuid:{uid}]  (fp:{fp})")
+                    print(f"  - {label}  [id:{pid}]  [uuid:{uid}]  {badge}  (fp:{fp})")
                 else:
-                    print(f"  - {pid} (fp:{fp})")
+                    print(f"  - {label}  {badge}  (fp:{fp})")
         elif ptype == "MSG_PRIVATE":
             to_id = payload.get("to")
             text = payload.get("text", "")
@@ -528,13 +541,35 @@ class Handlers:
         await self.encrypt_and_send(resolved, payload)
 
     async def _send_list_response(self, to_id: str):
-        peers = [{
-            "id": p.peer_id,
-            "uuid": getattr(p, "uuid", None),                      
-            "label": (getattr(p, "label", None) or p.peer_id),     
-            "fp": p.fingerprint,
-        } for p in self.state.list_peers()]
-        payload = {"type": "LIST_RESPONSE", "peers": peers, "ts": now_ts()}
+        # Build full peer snapshot
+        peers_full = []
+        now = now_ts()
+        FRESH = 15  # seconds
+        for pid, sess in self.state.sessions.items():
+            try:
+                # ensure last_seen exists; very old sessions will fail this and be treated stale
+                _ = sess.last_seen
+            except Exception:
+                sess.last_seen = now
+
+        # Build against saved directory
+        for p in self.state.list_peers():
+            sess = self.state.get_session(p.peer_id)
+            online = bool(sess and (now - getattr(sess, "last_seen", 0) <= FRESH))
+            peers_full.append({
+                "id": p.peer_id,
+                "uuid": getattr(p, "uuid", None),
+                "label": (getattr(p, "label", None) or p.peer_id),
+                "fp": p.fingerprint,
+                "online": online,
+            })
+
+        # Send it back to the requester
+        payload = {
+            "type": "LIST_RESPONSE",
+            "peers": peers_full,
+            "ts": now_ts(),
+        }
         await self.send_application(to_id, payload)
 
     # -------------------------
@@ -615,5 +650,42 @@ class Handlers:
             print(f"[FILE_RECEIVED] {entry['name']} from {remote_name} HASH_MISMATCH expected={sha256} got={h}")
         try:
             del self._recv_files[remote_name][fid]
+        except Exception:
+            pass
+
+    def on_connection_closed(self, remote_label: str):
+        """
+        Remove any session tracked under this connection label and its resolved peer name.
+        """
+        # try to map the label -> real peer name using the alias map
+        peer_name = None
+        try:
+            alias_map = getattr(self.register_alias.__self__, "alias", None)
+            if alias_map:
+                peer_name = alias_map.get(remote_label)
+        except Exception:
+            peer_name = None
+
+        # remove sessions under both keys; harmless if absent
+        try:
+            self.state.remove_session(remote_label)
+        except Exception:
+            pass
+        if peer_name:
+            try:
+                self.state.remove_session(peer_name)
+            except Exception:
+                pass
+
+        # optional: drop the reverse alias, so reconnect starts clean
+        try:
+            rev = getattr(self.register_alias.__self__, "reverse_alias", None)
+            if rev:
+                # remove mapping from peer_name -> label
+                if peer_name and rev.get(peer_name) == remote_label:
+                    del rev[peer_name]
+            alias = getattr(self.register_alias.__self__, "alias", None)
+            if alias and alias.get(remote_label):
+                del alias[remote_label]
         except Exception:
             pass

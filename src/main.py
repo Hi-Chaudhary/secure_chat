@@ -1,6 +1,7 @@
 import argparse, asyncio, json, os, sys
 from typing import List
 from .peer import Peer
+from .utils import now_ts
 
 def parse_args():
     ap = argparse.ArgumentParser()
@@ -33,8 +34,7 @@ async def run_interactive(peer: Peer):
         # /list  -> LIST_REQUEST
         # -----------------------
         if line.startswith("/list"):
-            payload = {"type": "LIST_REQUEST", "ts": 0}
-            # broadcast to everyone (use '*' as earlier)
+            payload = {"type": "LIST_REQUEST", "ts": now_ts()} 
             await peer.handlers.send_application("*", payload)
             continue
 

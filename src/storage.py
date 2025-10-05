@@ -3,6 +3,7 @@ from typing import Dict, Optional, Set, List
 import json, os
 from pathlib import Path
 from Crypto.PublicKey import RSA
+from .utils import now_ts
 
 @dataclass
 class PeerInfo:
@@ -16,12 +17,18 @@ class Session:
     aes_key: bytes
 
 @dataclass
+class Session:
+    aes_key: bytes
+    last_seen: int = field(default_factory=now_ts)
+
+@dataclass
 class State:
     self_id: str
     data_root: str = "data"
     peers: Dict[str, PeerInfo] = field(default_factory=dict)
     sessions: Dict[str, Session] = field(default_factory=dict)
     seen_mids: Set[str] = field(default_factory=set)   # persisted rolling window
+    last_seen: int = field(default_factory=now_ts)
 
     # ---- persistence config ----
     _max_seen: int = 512
