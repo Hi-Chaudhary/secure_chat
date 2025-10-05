@@ -15,6 +15,7 @@ async def _safe_send(ws, data: str):
         pass
 
 class Peer:
+    HEARTBEAT_INTERVAL = 10  # seconds between heartbeats
     def __init__(self, name: str, port: int, keys_dir: str, peers: List[str]):
         self.name = name
         self.port = port
@@ -48,12 +49,45 @@ class Peer:
         )
 
         self.server = None
+        self._hb_task = None
 
     async def start(self):
         # Enforce per-frame size at protocol layer too
         self.server = await websockets.serve(self._server_handler, "0.0.0.0", self.port, max_size=MAX_WS_FRAME)
         print(f"[{self.name}] listening ws://0.0.0.0:{self.port}")
+        # Start periodic encrypted heartbeats to keep presence fresh
+        self._hb_task = asyncio.create_task(self._heartbeat_loop())
         asyncio.create_task(self._connect_to_peers())
+
+    async def _heartbeat_loop(self):
+        """
+        Periodically send encrypted HEARTBEAT payloads to all peers with whom
+        we already have a session. This keeps `last_seen` fresh on the other side,
+        so `/list` shows them online even when chats are idle.
+        """
+        try:
+            while True:
+                await asyncio.sleep(self.HEARTBEAT_INTERVAL if hasattr(self, "HEARTBEAT_INTERVAL") else 10)
+                # Snapshot the current sessions to avoid mutation while iterating
+                try:
+                    peers = list(self.state.sessions.keys())
+                except Exception:
+                    peers = []
+                if not peers:
+                    continue
+                for peer_name in peers:
+                    try:
+                        await self.handlers.send_application(peer_name, {
+                            "type": "HEARTBEAT",
+                            "from": self.state.self_id,
+                            "ts": __import__("time").time().__int__(),
+                        })
+                    except Exception:
+                        # Ignore per-peer send errors; next tick will retry
+                        pass
+        except asyncio.CancelledError:
+            # Graceful shutdown of the loop
+            return
 
     async def _server_handler(self, ws: websockets.WebSocketServerProtocol):
         temp_id = f"in-{id(ws)}"

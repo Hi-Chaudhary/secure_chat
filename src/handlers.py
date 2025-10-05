@@ -427,6 +427,22 @@ class Handlers:
                 for peer_name, sess2 in list(self.state.sessions.items()):
                     if peer_name != remote_name:
                         await self._encrypt_send_one(peer_name, fwd, sess2)
+        elif ptype == "HEARTBEAT":
+            # last_seen is already updated in _handle_encrypted; this is just for visibility
+            # Optionally, reply with an ACK to prove both directions are alive
+            try:
+                await self.send_application(remote_name, {
+                    "type": "HEARTBEAT_ACK",
+                    "from": self.state.self_id,
+                    "ts": now_ts()
+                })
+            except Exception:
+                pass
+
+        elif ptype == "HEARTBEAT_ACK":
+            # Quiet success path; useful if you ever want to log RTTs
+            # print(f"[HB_ACK from {remote_name}]")
+            pass
         elif ptype == "FILE_OFFER":
             await self._handle_file_offer(payload, remote_name)
         elif ptype == "FILE_CHUNK":

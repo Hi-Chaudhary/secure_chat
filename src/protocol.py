@@ -170,7 +170,11 @@ def validate_payload(payload: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         return _validate_file_end(payload)
     if ptype == "ADMIN_CMD":  # only for vulnerable build; shape check here
         return _validate_admin_cmd(payload)
-    # NEW: acknowledgements and errors
+    # NEW: liveness + meta
+    if ptype == "HEARTBEAT":
+        return True, None
+    if ptype == "HEARTBEAT_ACK":
+        return True, None
     if ptype == "ACK":
         return _validate_ack(payload)
     if ptype == "ERROR":
