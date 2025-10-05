@@ -26,7 +26,8 @@ class Peer:
         self.pub  = load_pub(keys_dir)
         self.pub_b64 = pub_pem_b64(self.pub)
 
-        self.state = State(self_id=name)
+        # Persist JSON under data/<name>/
+        self.state = State(self_id=name, data_root="data")
         self.state.self_uuid = self.node_uuid               
         self.state.self_label = self.name  
 

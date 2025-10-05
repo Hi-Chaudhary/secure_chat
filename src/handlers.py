@@ -51,7 +51,8 @@ class Handlers:
         self.self_pub_b64 = self_pub_b64
         self.send_json = send_json_func
         self.register_alias = register_alias_func
-        self._seen_group = set()  # message IDs we've already forwarded/displayed
+        #self._seen_group = set()  # message IDs we've already forwarded/displayed
+        # group message de-dup survives restarts via State.seen_mids
 
         # replay protection (120s window, 1000 entries per peer)
         self.replay = ReplayProtector(max_age_seconds=120, max_entries_per_peer=1000)
@@ -321,7 +322,7 @@ class Handlers:
             text = payload.get("text", "")
             author = payload.get("from", remote_name)
 
-            # Simple message-id + TTL to prevent infinite loops
+            # Simple message-id + TTL to prevent infinite loops (persisted)
             mid = payload.get("mid")
             if not mid:
                 import secrets, base64
@@ -329,10 +330,10 @@ class Handlers:
                 payload["mid"] = mid
                 payload.setdefault("ttl", 3)
 
-            # Drop duplicates
-            if mid in self._seen_group:
+            # Drop duplicates (persisted set)
+            if mid in self.state.seen_mids:
                 return
-            self._seen_group.add(mid)
+            self.state.add_seen_mid(mid)
 
             # Show locally
             author = payload.get("from", remote_name)
