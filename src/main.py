@@ -17,8 +17,8 @@ def load_config(path: str):
 
 async def run_interactive(peer: Peer):
     await peer.start()
-    # simple REPL
-    print("Commands: /list | /msg --to <id> --text <msg> | /group --text <msg> | /quit")
+    # REPL (SOCP command names)
+    print("Commands: /list | /tell --to <id> --text <msg> | /all --text <msg> | /file --to <id> --path <file> | /quit")
     loop = asyncio.get_event_loop()
     while True:
         line = await loop.run_in_executor(None, sys.stdin.readline)
@@ -28,38 +28,83 @@ async def run_interactive(peer: Peer):
         line = line.strip()
         if line == "/quit":
             print("bye"); os._exit(0)
-        elif line.startswith("/list"):
-            payload = {"type":"LIST_REQUEST","ts":0}
+
+        # -----------------------
+        # /list  -> LIST_REQUEST
+        # -----------------------
+        if line.startswith("/list"):
+            payload = {"type": "LIST_REQUEST", "ts": 0}
+            # broadcast to everyone (use '*' as earlier)
             await peer.handlers.send_application("*", payload)
-        elif line.startswith("/msg"):
-            # format: /msg --to bob --text hello there
-            to = None; text = ""
+            continue
+
+        # -----------------------
+        # /tell  -> MSG_PRIVATE (SOCP: 'tell' is the CLI alias)
+        # usage: /tell --to bob --text hello there
+        # -----------------------
+        if line.startswith("/tell"):
+            to = None
+            text = ""
             parts = line.split()
             if "--to" in parts:
-                to = parts[parts.index("--to")+1]
+                try:
+                    to = parts[parts.index("--to") + 1]
+                except Exception:
+                    to = None
             if "--text" in parts:
-                idx = parts.index("--text")+1
-                text = " ".join(parts[idx:])
-            payload = {"type":"MSG_PRIVATE","to":to,"text":text}
+                try:
+                    idx = parts.index("--text") + 1
+                    text = " ".join(parts[idx:])
+                except Exception:
+                    text = ""
+            payload = {"type": "MSG_PRIVATE", "to": to, "text": text}
             await peer.handlers.send_application(to, payload)
-        elif line.startswith("/group"):
-            # /group --text hi all
+            continue
+
+        # -----------------------
+        # /all -> MSG_GROUP (broadcast to public channel)
+        # usage: /all --text hi everyone
+        # -----------------------
+        if line.startswith("/all"):
             text = ""
             parts = line.split()
             if "--text" in parts:
-                idx = parts.index("--text")+1
-                text = " ".join(parts[idx:])
-            payload = {"type":"MSG_GROUP","text":text}
+                try:
+                    idx = parts.index("--text") + 1
+                    text = " ".join(parts[idx:])
+                except Exception:
+                    text = ""
+            payload = {"type": "MSG_GROUP", "text": text}
             await peer.handlers.send_application("*", payload)
-        elif line.startswith("/sendfile"):
-        # /sendfile --to bob --path C:\file.bin
+            continue
+
+        # -----------------------
+        # /file -> file transfer (maps to existing send_file)
+        # usage: /file --to bob --path <path>
+        # -----------------------
+        if line.startswith("/file"):
             parts = line.split()
-            to = parts[parts.index("--to")+1] if "--to" in parts else None
-            path = " ".join(parts[parts.index("--path")+1:]) if "--path" in parts else None
+            to = None
+            path = None
+            if "--to" in parts:
+                try:
+                    to = parts[parts.index("--to") + 1]
+                except Exception:
+                    to = None
+            if "--path" in parts:
+                try:
+                    path = " ".join(parts[parts.index("--path") + 1:])
+                except Exception:
+                    path = None
             if not (to and path):
-                print("usage: /sendfile --to <peer> --path <file>")
+                print("usage: /file --to <peer> --path <file>")
             else:
                 await peer.handlers.send_file(to, path)
+            continue
+
+        # Unknown command: try helpful hint
+        print("Unknown command. Supported: /list | /tell | /all | /file | /quit")
+
 
 def main():
     args = parse_args()
