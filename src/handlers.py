@@ -315,7 +315,7 @@ class Handlers:
         try:
             pt = aes_decrypt(sess.aes_key, obj["iv"], obj["ct"], obj["tag"])
         except Exception as e:
-            print("[!] Decrypt failed:", e)
+            #print("[!] Decrypt failed:", e)
             return
 
         try:
