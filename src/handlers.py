@@ -28,6 +28,8 @@ from .storage import State, Session, PeerInfo
 from .routing import BROADCAST
 from .keymgr import fingerprint, get_pinned, pin_peer
 from .replay_protector import ReplayProtector
+from websockets.exceptions import ConnectionClosed
+
 
 # file transfer constants
 FILE_CHUNK_SIZE = 64 * 1024
@@ -51,6 +53,7 @@ class Handlers:
         self.self_pub_b64 = self_pub_b64
         self.send_json = send_json_func
         self.register_alias = register_alias_func
+        self._label_to_peer: Dict[str, str] = {}
         #self._seen_group = set()  # message IDs we've already forwarded/displayed
         # group message de-dup survives restarts via State.seen_mids
 
@@ -162,7 +165,13 @@ class Handlers:
             except Exception:
                 # swallow errors — persistence is best-effort
                 pass
-
+        # ---- replace any stale real-name session (fresh dial must win) ----
+        try:
+            existing = self.state.get_session(peer_name)
+            if existing is not None:
+                self.state.remove_session(peer_name)
+        except Exception:
+            pass
 
         # Move any temp session under the real name
         temp_sess = self.state.get_session(remote_label)

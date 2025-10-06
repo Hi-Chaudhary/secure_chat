@@ -56,6 +56,12 @@ class State:
 
     def get_session(self, peer_id: str) -> Optional[Session]:
         return self.sessions.get(peer_id)
+    
+    def remove_session(self, peer_id: str):
+        self.sessions.pop(peer_id, None)
+
+    def has_session(self, peer_id: str) -> bool:
+        return peer_id in self.sessions
 
     def list_peers(self):
         return list(self.peers.values())

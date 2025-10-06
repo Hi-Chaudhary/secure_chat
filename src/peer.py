@@ -103,6 +103,11 @@ class Peer:
             real = self.alias.pop(temp_id, None)
             if real:
                 self.reverse_alias.pop(real, None)
+        # tell the handler to drop any sessions bound to this link/peer
+        try:
+            self.handlers.on_connection_closed(temp_id)
+        except Exception:
+            pass
 
     async def _connect_to_peers(self):
         await asyncio.sleep(0.2)
@@ -127,6 +132,11 @@ class Peer:
                 real = self.alias.pop(temp_id, None)
                 if real:
                     self.reverse_alias.pop(real, None)
+            # tell the handler to drop any sessions bound to this link/peer
+            try:
+                self.handlers.on_connection_closed(temp_id)
+            except Exception:
+                pass
 
     def _register_alias(self, temp_label: str, real_name: str):
         self.alias[temp_label] = real_name
